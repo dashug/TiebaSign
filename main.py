@@ -7,10 +7,6 @@ import copy
 import logging
 import random
 
-import smtplib
-from email.mime.text import MIMEText
-
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -51,7 +47,6 @@ KW = "kw"
 
 s = requests.Session()
 
-
 def get_tbs(bduss):
     logger.info("获取tbs开始")
     headers = copy.copy(HEADERS)
@@ -59,16 +54,14 @@ def get_tbs(bduss):
     try:
         tbs = s.get(url=TBS_URL, headers=headers, timeout=5).json()[TBS]
     except Exception as e:
-        logger.error("获取tbs出错" + e)
+        logger.error("获取tbs出错" + str(e))
         logger.info("重新获取tbs开始")
         tbs = s.get(url=TBS_URL, headers=headers, timeout=5).json()[TBS]
     logger.info("获取tbs结束")
     return tbs
 
-
 def get_favorite(bduss):
     logger.info("获取关注的贴吧开始")
-    # 客户端关注的贴吧
     returnData = {}
     i = 1
     data = {
@@ -89,7 +82,7 @@ def get_favorite(bduss):
     try:
         res = s.post(url=LIKIE_URL, data=data, timeout=5).json()
     except Exception as e:
-        logger.error("获取关注的贴吧出错" + e)
+        logger.error("获取关注的贴吧出错" + str(e))
         return []
     returnData = res
     if 'forum_list' not in returnData:
@@ -120,7 +113,7 @@ def get_favorite(bduss):
         try:
             res = s.post(url=LIKIE_URL, data=data, timeout=5).json()
         except Exception as e:
-            logger.error("获取关注的贴吧出错" + e)
+            logger.error("获取关注的贴吧出错" + str(e))
             continue
         if 'forum_list' not in res:
             continue
@@ -153,7 +146,6 @@ def get_favorite(bduss):
     logger.info("获取关注的贴吧结束")
     return t
 
-
 def encodeData(data):
     s = EMPTY_STR
     keys = data.keys()
@@ -163,53 +155,13 @@ def encodeData(data):
     data.update({SIGN: str(sign)})
     return data
 
-
 def client_sign(bduss, tbs, fid, kw):
-    # 客户端签到
     logger.info("开始签到贴吧：" + kw)
     data = copy.copy(SIGN_DATA)
     data.update({BDUSS: bduss, FID: fid, KW: kw, TBS: tbs, TIMESTAMP: str(int(time.time()))})
     data = encodeData(data)
     res = s.post(url=SIGN_URL, data=data, timeout=5).json()
     return res
-
-def send_email(sign_list):
-    if 'HOST' not in ENV or 'FROM' not in ENV or 'TO' not in ENV or 'AUTH' not in ENV:
-        logger.error("未配置邮箱")
-        return
-    HOST = ENV['HOST']
-    FROM = ENV['FROM']
-    TO = ENV['TO'].split('#')
-    AUTH = ENV['AUTH']
-    length = len(sign_list)
-    subject = f"{time.strftime('%Y-%m-%d', time.localtime())} 签到{length}个贴吧"
-    body = """
-    <style>
-    .child {
-      background-color: rgba(173, 216, 230, 0.19);
-      padding: 10px;
-    }
-
-    .child * {
-      margin: 5px;
-    }
-    </style>
-    """
-    for i in sign_list:
-        body += f"""
-        <div class="child">
-            <div class="name"> 贴吧名称: { i['name'] }</div>
-            <div class="slogan"> 贴吧简介: { i['slogan'] }</div>
-        </div>
-        <hr>
-        """
-    msg = MIMEText(body, 'html', 'utf-8')
-    msg['subject'] = subject
-    smtp = smtplib.SMTP()
-    smtp.connect(HOST)
-    smtp.login(FROM, AUTH)
-    smtp.sendmail(FROM, TO, msg.as_string())
-    smtp.quit()
 
 def main():
     if ('BDUSS' not in ENV):
@@ -224,9 +176,7 @@ def main():
             time.sleep(random.randint(1,5))
             client_sign(i, tbs, j["id"], j["name"])
         logger.info("完成第" + str(n) + "个用户签到")
-    send_email(favorites)
     logger.info("所有用户签到结束")
-
 
 if __name__ == '__main__':
     main()
