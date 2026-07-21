@@ -51,12 +51,23 @@ def get_tbs(bduss):
     logger.info("获取tbs开始")
     headers = copy.copy(HEADERS)
     headers.update({COOKIE: EMPTY_STR.join([BDUSS, EQUAL, bduss])})
-    try:
-        tbs = s.get(url=TBS_URL, headers=headers, timeout=5).json()[TBS]
-    except Exception as e:
-        logger.error("获取tbs出错" + str(e))
-        logger.info("重新获取tbs开始")
-        tbs = s.get(url=TBS_URL, headers=headers, timeout=5).json()[TBS]
+    response = None
+    last_error = None
+    for attempt in range(2):
+        try:
+            response = s.get(url=TBS_URL, headers=headers, timeout=5).json()
+            break
+        except Exception as e:
+            last_error = e
+            if attempt == 0:
+                logger.warning("获取tbs失败，正在重试")
+    if response is None:
+        raise RuntimeError("获取tbs失败") from last_error
+    if str(response.get('is_login')) != '1':
+        raise RuntimeError("BDUSS无效或已过期，请更新GitHub Actions Secret")
+    if TBS not in response:
+        raise RuntimeError("tbs接口响应缺少tbs字段")
+    tbs = response[TBS]
     logger.info("获取tbs结束")
     return tbs
 
@@ -82,14 +93,19 @@ def get_favorite(bduss):
     try:
         res = s.post(url=LIKIE_URL, data=data, timeout=5).json()
     except Exception as e:
-        logger.error("获取关注的贴吧出错" + str(e))
-        return []
+        raise RuntimeError("获取关注的贴吧请求失败") from e
+    error_code = str(res.get('error_code', '0'))
+    if error_code != '0':
+        error_msg = res.get('error_msg', '未知错误')
+        raise RuntimeError("获取关注的贴吧失败：error_code=" + error_code + "，error_msg=" + str(error_msg))
+    if 'forum_list' not in res:
+        raise RuntimeError("关注贴吧接口响应缺少forum_list字段")
     returnData = res
-    if 'forum_list' not in returnData:
-        returnData['forum_list'] = []
     if res['forum_list'] == []:
         logger.info("未获取到关注的贴吧")
         return []
+    if not isinstance(returnData['forum_list'], dict):
+        raise RuntimeError("关注贴吧接口返回了无法识别的forum_list结构")
     if 'non-gconforum' not in returnData['forum_list']:
         returnData['forum_list']['non-gconforum'] = []
     if 'gconforum' not in returnData['forum_list']:
@@ -114,10 +130,13 @@ def get_favorite(bduss):
         try:
             res = s.post(url=LIKIE_URL, data=data, timeout=5).json()
         except Exception as e:
-            logger.error("获取关注的贴吧出错" + str(e))
-            continue
+            raise RuntimeError("获取关注的贴吧分页请求失败") from e
+        error_code = str(res.get('error_code', '0'))
+        if error_code != '0':
+            error_msg = res.get('error_msg', '未知错误')
+            raise RuntimeError("获取关注的贴吧分页失败：error_code=" + error_code + "，error_msg=" + str(error_msg))
         if 'forum_list' not in res:
-            continue
+            raise RuntimeError("关注贴吧分页响应缺少forum_list字段")
         if 'non-gconforum' in res['forum_list']:
             returnData['forum_list']['non-gconforum'].append(res['forum_list']['non-gconforum'])
         if 'gconforum' in res['forum_list']:
@@ -162,15 +181,22 @@ def client_sign(bduss, tbs, fid, kw):
     data.update({BDUSS: bduss, FID: fid, KW: kw, TBS: tbs, TIMESTAMP: str(int(time.time()))})
     data = encodeData(data)
     res = s.post(url=SIGN_URL, data=data, timeout=5).json()
+    error_code = str(res.get('error_code', ''))
+    if error_code == '0':
+        logger.info("签到成功：" + kw)
+    elif error_code == '160002':
+        logger.info("今日已签到：" + kw)
+    else:
+        error_msg = res.get('error_msg', '未知错误')
+        raise RuntimeError("签到失败：" + kw + "，error_code=" + error_code + "，error_msg=" + str(error_msg))
     return res
 
 def main():
     if ('BDUSS' not in ENV):
-        logger.error("未配置BDUSS")
-        return
+        raise RuntimeError("未配置BDUSS")
     b = ENV['BDUSS'].split('#')
     for n, i in enumerate(b):
-        logger.info("开始签到第" + str(n) + "个用户" + i)
+        logger.info("开始签到第" + str(n) + "个用户")
         tbs = get_tbs(i)
         favorites = get_favorite(i)
         for j in favorites:
