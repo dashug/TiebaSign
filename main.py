@@ -88,7 +88,8 @@ def get_favorite(bduss):
     if 'forum_list' not in returnData:
         returnData['forum_list'] = []
     if res['forum_list'] == []:
-        return {'gconforum': [], 'non-gconforum': []}
+        logger.info("未获取到关注的贴吧")
+        return []
     if 'non-gconforum' not in returnData['forum_list']:
         returnData['forum_list']['non-gconforum'] = []
     if 'gconforum' not in returnData['forum_list']:
